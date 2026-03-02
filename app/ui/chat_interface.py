@@ -4,12 +4,20 @@ Chat Interface - User interface for the workflow system.
 """
 
 import asyncio
+import os
 from typing import Optional, Dict, Any
 from pathlib import Path
 
 # Add parent to path for imports
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Load environment variables from .env file
+from dotenv import load_dotenv
+from pathlib import Path
+env_path = Path(__file__).parent.parent.parent / ".env"
+if env_path.exists():
+    load_dotenv(env_path)
 
 from agent.agent import LLMAgent
 from agent.router import WorkflowRouter
@@ -45,17 +53,38 @@ Type 'quit' or 'exit' to leave.
         
         try:
             # Import LangChain and set up the agent
-            from langchain_community.llms import Ollama
+            from langchain_openai import ChatOpenAI
             from langchain_core.language_models import BaseLanguageModel
             
-            # Try to connect to local LLM (Ollama)
-            try:
-                llm = Ollama(model="llama3.1", base_url="http://localhost:11434")
-                print("   ✓ Connected to Ollama (llama3.1)")
-            except Exception:
-                # Fallback to mock LLM
-                llm = MockLLM()
-                print("   ⚠ Using mock LLM (Ollama not available)")
+            # Check for NVIDIA API configuration
+            nvidia_api_key = os.getenv("NVIDIA_API_KEY")
+            nvidia_base_url = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+            nvidia_model = os.getenv("NVIDIA_MODEL", "nvidia/mistralai/mistral-large-3-675b-instruct-2512")
+            
+            if nvidia_api_key:
+                # Use NVIDIA API (OpenAI-compatible)
+                llm = ChatOpenAI(
+                    model=nvidia_model,
+                    base_url=nvidia_base_url,
+                    api_key=nvidia_api_key,
+                    temperature=0.3,
+                    max_tokens=4096
+                )
+                model_name = nvidia_model.split("/")[-1] if "/" in nvidia_model else nvidia_model
+                print(f"   ✓ Connected to NVIDIA API ({model_name})")
+            else:
+                # Try Ollama as fallback
+                try:
+                    from langchain_community.llms import Ollama
+                    ollama_model = os.getenv("OLLAMA_MODEL", "llama3.1")
+                    ollama_base = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+                    llm = Ollama(model=ollama_model, base_url=ollama_base)
+                    print(f"   ✓ Connected to Ollama ({ollama_model})")
+                except Exception:
+                    # Fallback to Mock LLM
+                    llm = MockLLM()
+                    print("   ⚠ Using mock LLM")
+                    print("   Set NVIDIA_API_KEY in .env or start Ollama to use a real LLM")
             
             self.agent = LLMAgent(llm)
             self.router = WorkflowRouter()
